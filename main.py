@@ -1,15 +1,13 @@
 import numpy as np
 import pandas as pd
-import math
 import os
 import warnings
 from sklearn.model_selection import KFold, GridSearchCV, RandomizedSearchCV, train_test_split
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from xgboost import XGBRegressor
+from sklearn.metrics import roc_auc_score
+from xgboost import XGBClassifier
 from skopt import BayesSearchCV  # Make sure to install via: pip install scikit-optimize
 
 warnings.filterwarnings("ignore", category=UserWarning)  # quiet some XGBoost warnings
-
 
 # -------------------------------
 def kfold_train_and_evaluate_xgb(
@@ -22,43 +20,43 @@ def kfold_train_and_evaluate_xgb(
         search_spaces=None
 ):
     """
-    Performs K-fold cross-validation with XGBoost for regression, printing:
+    Performs K-fold cross-validation with XGBoost for classification, printing:
       - Fold-level best hyperparameters (if using a CV search)
-      - Fold-level metrics (MAE, RMSE, R2)
-      - Average metrics across all folds
-    Returns the list of best parameters (one per fold, if available) and average metrics.
+      - Fold-level ROC AUC
+      - Average ROC AUC across all folds
+    Returns the list of best parameters (one per fold, if available) and average ROC AUC.
     """
 
     # Helper to build the XGB model or CV object based on hyper_tuning
     def build_xgb_model():
         if hyper_tuning == "default":
-            return XGBRegressor(random_state=42, eval_metric='rmse')
+            return XGBClassifier(random_state=42, eval_metric='logloss', objective='binary:logistic')
         elif hyper_tuning == "grid":
             if not param_grid:
                 raise ValueError("param_grid must be provided for grid search.")
-            base_xgb = XGBRegressor(random_state=42, eval_metric='rmse')
+            base_xgb = XGBClassifier(random_state=42, eval_metric='logloss', objective='binary:logistic')
             return GridSearchCV(estimator=base_xgb, param_grid=param_grid,
-                                scoring='neg_mean_squared_error', cv=5, verbose=0)
+                                scoring='roc_auc', cv=5, verbose=0)
         elif hyper_tuning == "random":
             if not param_dist:
                 raise ValueError("param_dist must be provided for random search.")
-            base_xgb = XGBRegressor(random_state=42, eval_metric='rmse')
+            base_xgb = XGBClassifier(random_state=42, eval_metric='logloss', objective='binary:logistic')
             return RandomizedSearchCV(estimator=base_xgb, param_distributions=param_dist,
-                                      n_iter=10, cv=5, scoring='neg_mean_squared_error',
+                                      n_iter=10, cv=5, scoring='roc_auc',
                                       random_state=42, verbose=0)
         elif hyper_tuning == "bayesian":
             if not search_spaces:
                 raise ValueError("search_spaces must be provided for BayesSearchCV.")
-            base_xgb = XGBRegressor(random_state=42, eval_metric='rmse')
+            base_xgb = XGBClassifier(random_state=42, eval_metric='logloss', objective='binary:logistic')
             return BayesSearchCV(estimator=base_xgb, search_spaces=search_spaces,
-                                 n_iter=16, cv=5, scoring='neg_mean_squared_error',
+                                 n_iter=16, cv=5, scoring='roc_auc',
                                  random_state=42, verbose=0)
         else:
             print(f"[XGB] Unrecognized hyper_tuning='{hyper_tuning}'. Using default model.")
-            return XGBRegressor(random_state=42, eval_metric='rmse')
+            return XGBClassifier(random_state=42, eval_metric='logloss', objective='binary:logistic')
 
     kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
-    fold_metrics = []
+    fold_aucs = []
     best_params_per_fold = []
 
     for fold_idx, (train_idx, val_idx) in enumerate(kf.split(X)):
@@ -73,41 +71,32 @@ def kfold_train_and_evaluate_xgb(
             best_estimator = model.best_estimator_
             print("  Best Params:", model.best_params_)
             best_params_per_fold.append(model.best_params_)
-            y_pred = best_estimator.predict(X_val_fold)
+            y_pred = best_estimator.predict_proba(X_val_fold)[:, 1]
         else:
-            y_pred = model.predict(X_val_fold)
+            y_pred = model.predict_proba(X_val_fold)[:, 1]
             best_params_per_fold.append(None)
 
-        mae = mean_absolute_error(y_val_fold, y_pred)
-        mse = mean_squared_error(y_val_fold, y_pred)
-        rmse = math.sqrt(mse)
-        r2 = r2_score(y_val_fold, y_pred)
-        fold_metrics.append((mae, mse, rmse, r2))
-        print(f"  Fold Metrics => MAE={mae:.3f}, RMSE={rmse:.3f}, R2={r2:.3f}")
+        auc = roc_auc_score(y_val_fold, y_pred)
+        fold_aucs.append(auc)
+        print(f"  Fold ROC AUC: {auc:.3f}")
 
-    mae_avg = np.mean([m[0] for m in fold_metrics])
-    mse_avg = np.mean([m[1] for m in fold_metrics])
-    rmse_avg = np.mean([m[2] for m in fold_metrics])
-    r2_avg = np.mean([m[3] for m in fold_metrics])
-
+    auc_avg = np.mean(fold_aucs)
     print("\n=== Overall K-Fold Results ===")
-    print(f"Average MAE:  {mae_avg:.3f}")
-    print(f"Average RMSE: {rmse_avg:.3f}")
-    print(f"Average R2:   {r2_avg:.3f}")
+    print(f"Average ROC AUC: {auc_avg:.3f}")
 
-    return best_params_per_fold, (mae_avg, mse_avg, rmse_avg, r2_avg)
+    return best_params_per_fold, auc_avg
 
 
 # -------------------------------
 def get_xgb_model(best_params=None):
     """
-    Returns an XGBRegressor with random_state and eval_metric set.
+    Returns an XGBClassifier with random_state, eval_metric, and objective set.
     If best_params is provided (dict), they are passed to the model.
     """
-    params = {"random_state": 42, "eval_metric": "rmse"}
+    params = {"random_state": 42, "eval_metric": "logloss", "objective": "binary:logistic"}
     if best_params:
         params.update(best_params)
-    return XGBRegressor(**params)
+    return XGBClassifier(**params)
 
 
 # -------------------------------
@@ -176,46 +165,41 @@ def main():
         print("==============================================")
         # Stage i) K-fold CV training
         if tech == "default":
-            bp_folds, kfold_metrics = kfold_train_and_evaluate_xgb(
+            bp_folds, kfold_auc = kfold_train_and_evaluate_xgb(
                 X_train_np, y_np, n_splits=5, hyper_tuning=tech
             )
         elif tech == "grid":
-            bp_folds, kfold_metrics = kfold_train_and_evaluate_xgb(
+            bp_folds, kfold_auc = kfold_train_and_evaluate_xgb(
                 X_train_np, y_np, n_splits=5, hyper_tuning=tech, param_grid=params_dict[tech]
             )
         elif tech == "random":
-            bp_folds, kfold_metrics = kfold_train_and_evaluate_xgb(
+            bp_folds, kfold_auc = kfold_train_and_evaluate_xgb(
                 X_train_np, y_np, n_splits=5, hyper_tuning=tech, param_dist=params_dict[tech]
             )
         elif tech == "bayesian":
-            bp_folds, kfold_metrics = kfold_train_and_evaluate_xgb(
+            bp_folds, kfold_auc = kfold_train_and_evaluate_xgb(
                 X_train_np, y_np, n_splits=5, hyper_tuning=tech, search_spaces=params_dict[tech]
             )
-        mae, mse, rmse, r2 = kfold_metrics
-        print(f"{tech.upper()} K-Fold Error Metrics: MAE={float(mae):.3f}, MSE={float(mse):.3f}, RMSE={float(rmse):.3f}, R2={float(r2):.3f}")
+        print(f"{tech.upper()} K-Fold ROC AUC: {kfold_auc:.3f}")
 
         # Choose best parameters from CV – here we simply pick the first fold's best params if available
         best_params = bp_folds[0] if bp_folds[0] is not None else None
+        print(f"{tech.upper()} Selected Best Hyperparameters: {best_params}")
 
         # Stage ii) Hold-out test evaluation
         X_tr, X_hold, y_tr, y_hold = train_test_split(X_train, y, test_size=0.2, random_state=42)
         model_hold = get_xgb_model(best_params)
         model_hold.fit(X_tr, y_tr)
-        y_hold_pred = model_hold.predict(X_hold)
-        mae_hold = mean_absolute_error(y_hold, y_hold_pred)
-        mse_hold = mean_squared_error(y_hold, y_hold_pred)
-        rmse_hold = math.sqrt(mse_hold)
-        r2_hold = r2_score(y_hold, y_hold_pred)
-        test_metrics = (mae_hold, mse_hold, rmse_hold, r2_hold)
-        print(f"{tech.upper()} Test Error Metrics: MAE={mae_hold:.3f}, RMSE={rmse_hold:.3f}, R2={r2_hold:.3f}")
+        y_hold_pred = model_hold.predict_proba(X_hold)[:, 1]
+        hold_auc = roc_auc_score(y_hold, y_hold_pred)
+        print(f"{tech.upper()} Hold-Out Test ROC AUC: {hold_auc:.3f}")
 
         # Stage iii) Final training on all training data and submission prediction
         final_model = get_xgb_model(best_params)
         final_model.fit(X_train, y)  # train on full training data
-        y_final_pred = final_model.predict(X_final_test)
+        y_final_pred = final_model.predict_proba(X_final_test)[:, 1]
 
         # Prepare submission file (assuming sample_submission_file has an Id and prediction column)
-        # We update the second column (or a column named 'target'/'Y') with predictions.
         if 'target' in df_sample_sub.columns:
             df_sample_sub['target'] = y_final_pred
         elif 'Y' in df_sample_sub.columns:
@@ -227,6 +211,8 @@ def main():
         submission_filename = f"5fold_submission_{tech}.csv"
         df_sample_sub.to_csv(submission_filename, index=False)
         print(f"{tech.upper()} Submission saved to {submission_filename}")
+        print(f"{tech.upper()} K-Fold ROC AUC: {kfold_auc:.3f}")
+        print(f"{tech.upper()} Hold-Out Test ROC AUC: {hold_auc:.3f}\n")
 
 
 if __name__ == "__main__":
