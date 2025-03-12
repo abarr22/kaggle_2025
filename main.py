@@ -1,5 +1,4 @@
 import sys
-
 import numpy as np
 import pandas as pd
 import os
@@ -23,6 +22,64 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger()
+
+
+# -------------------------------
+def preprocess_features(df_train, df_test):
+    """
+    Preprocesses training and testing features by:
+      - Replacing sentinel missing values (-3, -1) with np.nan.
+      - Filling missing values (median for numeric, mode for categorical).
+      - Adding a simple interaction feature (if columns 'f2' and 'f3' exist).
+      - Applying a log1p transform on highly skewed numeric features.
+      - One-hot encoding the combined dataset.
+    Returns:
+      df_train_new, df_test_new: Preprocessed training and testing DataFrames.
+    """
+    # Replace sentinel missing values
+    df_train.replace({-3: np.nan, -1: np.nan}, inplace=True)
+    df_test.replace({-3: np.nan, -1: np.nan}, inplace=True)
+
+    # Fill missing values for numeric columns using median
+    numeric_cols = df_train.select_dtypes(include=[np.number]).columns
+    for col in numeric_cols:
+        median_val = df_train[col].median()
+        df_train[col].fillna(median_val, inplace=True)
+        if col in df_test.columns:
+            df_test[col].fillna(df_test[col].median(), inplace=True)
+
+    # Fill missing values for non-numeric columns using mode
+    categorical_cols = df_train.select_dtypes(exclude=[np.number]).columns
+    for col in categorical_cols:
+        mode_val = df_train[col].mode()[0]
+        df_train[col].fillna(mode_val, inplace=True)
+        if col in df_test.columns:
+            df_test[col].fillna(mode_val, inplace=True)
+
+    # Add an interaction feature if f2 and f3 exist
+    if 'f2' in df_train.columns and 'f3' in df_train.columns:
+        df_train['f2_minus_f3'] = df_train['f2'] - df_train['f3']
+        df_test['f2_minus_f3'] = df_test['f2'] - df_test['f3']
+
+    # Apply log transformation to numeric features that are heavily skewed
+    for col in numeric_cols:
+        # Only apply if column is in both dataframes and all values are non-negative
+        if col in df_train.columns and df_train[col].min() >= 0:
+            median_val = df_train[col].median()
+            # Avoid division by zero; require median > 0 and a high max-to-median ratio
+            if median_val > 0 and (df_train[col].max() / median_val) > 10:
+                df_train[col] = np.log1p(df_train[col])
+                if col in df_test.columns:
+                    df_test[col] = np.log1p(df_test[col])
+
+    # Combine and one-hot encode
+    combined = pd.concat([df_train, df_test], axis=0)
+    combined = pd.get_dummies(combined)
+    df_train_new = combined.iloc[:len(df_train), :].reset_index(drop=True)
+    df_test_new = combined.iloc[len(df_train):, :].reset_index(drop=True)
+    return df_train_new, df_test_new
+
+
 # -------------------------------
 def kfold_train_and_evaluate_xgb(
         X,
@@ -152,18 +209,14 @@ def main():
     if len(possible_targets) != 1:
         raise ValueError("Unable to uniquely identify the target column.")
     target_col = possible_targets.pop()
-    logger.info("Identified target column:", target_col)
+    logger.info("Identified target column: " + target_col)
 
     y = df_train[target_col]
     X_train = df_train.drop(columns=[target_col])
 
-    # Basic preprocessing: fill missing values & one-hot encode
-    X_train = X_train.fillna(X_train.median())
-    df_test = df_test.fillna(df_test.median())
-    combined = pd.concat([X_train, df_test], axis=0)
-    combined = pd.get_dummies(combined)
-    X_train = combined.iloc[:len(X_train), :].reset_index(drop=True)
-    X_final_test = combined.iloc[len(X_train):, :].reset_index(drop=True)
+    # Preprocess features with enhancements: missing value replacement, interaction, and log transform.
+    X_train, df_test_processed = preprocess_features(X_train, df_test)
+    X_final_test = df_test_processed.copy()
 
     # Convert to NumPy arrays for CV
     X_train_np = X_train.values
@@ -172,30 +225,27 @@ def main():
     # Define parameter sets for each hyper_tuning technique
     techniques = ["default", "grid", "random", "bayesian"]
     grid_example = {
-        'n_estimators': [200, 300, 400],  # 200 (100) chosen a lot
-        'max_depth': [2, 3],  # [1, 2, 3, 5] 2 and 3 chosen a lot
-        'gamma': [0, 0.1, 0.5],  # determines best regularization parameter
-        # 'reg_alpha': [0, 0.1, 1.0],  # determines best l1 parameter
-        # 'reg_lambda': [1, 1.5, 2.0],  # determines best l2 parameter
-        # 'subsample': [0.8, 1.0]  # optional
+        'n_estimators': [300, 350, 400],  # Refining around 300-400
+        'max_depth': [2, 3],  # 2 and 3 performed best
+        'gamma': [0, 0.05, 0.1]  # Narrow gamma to low values
     }
     random_example = {
-        'n_estimators': [175, 200, 225], # 200 chosen a lot
-        'max_depth': [3, 4, 5],  # 5 (3) chosen a lot
-        'learning_rate': [0.05, 0.075, 0.1],  # 0.05 (0.1) chosen a lot
-        'gamma': [0.75, 0.1, 0.125],  # 0.1 chosen a lot
-        'reg_alpha': [0, 0.05, 0.1],  # 0 chosen a lot
-        'reg_lambda': [2.0, 2.5, 3.0],  # 2.0 chosen a lot
-        'subsample': [0.7, 0.8, 0.9]  # 0.8 chosen a lot
+        'n_estimators': [200, 225, 250],
+        'max_depth': [3, 4],
+        'learning_rate': [0.075, 0.1],
+        'gamma': [0.05, 0.1],
+        'reg_alpha': [0, 0.05],
+        'reg_lambda': [2.0, 2.5, 3.0],
+        'subsample': [0.8, 0.9]
     }
     bayesian_example = {
-        'n_estimators': (350, 500),  # 356, 400
-        'max_depth': (1, 4),  # 4, 3
-        'learning_rate': (1e-3, 1e-1, 'log-uniform'),  # 0.0355 (0.055, 0.1)
-        'gamma': (0, 0.5),  # 0.308 (0)
-        'reg_alpha': (0, 1.0),  # 0.5926 (0.67, 0)
-        'reg_lambda': (1, 2.5),  # 1.59, 2, 1.23
-        'subsample': (0.6, 1.0, 'uniform')  # 0.859 (1.0)
+        'n_estimators': (300, 450),  # Focus on 300-450
+        'max_depth': (2, 4),  # 2-4 range
+        'learning_rate': (0.05, 0.1, 'log-uniform'),  # Between 0.05 and 0.1
+        'gamma': (0, 0.1),  # Focus on low gamma
+        'reg_alpha': (0, 0.1),  # Mostly near 0
+        'reg_lambda': (2.0, 3.0),  # Around 2.0 to 3.0
+        'subsample': (0.8, 1.0, 'uniform')  # 0.8 to 1.0
     }
     params_dict = {
         "default": None,
