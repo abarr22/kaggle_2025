@@ -1,0 +1,159 @@
+
+==============================================
+Processing hypertuning technique: DEFAULT
+==============================================
+
+--- Fold 1/5 ---
+  Model saved to default_outer_folds\default_1.pkl
+  Fold ROC AUC: 0.844
+
+--- Fold 2/5 ---
+  Model saved to default_outer_folds\default_2.pkl
+  Fold ROC AUC: 0.862
+
+--- Fold 3/5 ---
+  Model saved to default_outer_folds\default_3.pkl
+  Fold ROC AUC: 0.857
+
+--- Fold 4/5 ---
+  Model saved to default_outer_folds\default_4.pkl
+  Fold ROC AUC: 0.831
+
+--- Fold 5/5 ---
+  Model saved to default_outer_folds\default_5.pkl
+  Fold ROC AUC: 0.846
+
+=== Overall K-Fold Results ===
+Average ROC AUC: 0.848
+DEFAULT K-Fold ROC AUC: 0.848
+DEFAULT Selected Best Hyperparameters: None
+DEFAULT Hold-Out Test ROC AUC: 0.846
+DEFAULT Aggregated Submission saved to 5fold_submission_default.csv
+DEFAULT Fold 1 Submission saved to default_outer_folds\default_1.csv
+DEFAULT Fold 2 Submission saved to default_outer_folds\default_2.csv
+DEFAULT Fold 3 Submission saved to default_outer_folds\default_3.csv
+DEFAULT Fold 4 Submission saved to default_outer_folds\default_4.csv
+DEFAULT Fold 5 Submission saved to default_outer_folds\default_5.csv
+
+==============================================
+Processing hypertuning technique: GRID
+==============================================
+
+--- Fold 1/5 ---
+  Best Params: {'gamma': 0, 'max_depth': 3, 'n_estimators': 300}
+  Model saved to grid_outer_folds\grid_1.pkl
+  Fold ROC AUC: 0.855
+
+--- Fold 2/5 ---
+  Best Params: {'gamma': 0, 'max_depth': 3, 'n_estimators': 200}
+  Model saved to grid_outer_folds\grid_2.pkl
+  Fold ROC AUC: 0.866
+
+--- Fold 3/5 ---
+  Best Params: {'gamma': 0, 'max_depth': 2, 'n_estimators': 200}
+  Model saved to grid_outer_folds\grid_3.pkl
+  Fold ROC AUC: 0.869
+
+--- Fold 4/5 ---
+  Best Params: {'gamma': 0, 'max_depth': 2, 'n_estimators': 200}
+  Model saved to grid_outer_folds\grid_4.pkl
+  Fold ROC AUC: 0.842
+
+--- Fold 5/5 ---
+  Best Params: {'gamma': 0.5, 'max_depth': 3, 'n_estimators': 200}
+  Model saved to grid_outer_folds\grid_5.pkl
+  Fold ROC AUC: 0.850
+
+=== Overall K-Fold Results ===
+Average ROC AUC: 0.856
+GRID K-Fold ROC AUC: 0.856
+GRID Selected Best Hyperparameters: {'gamma': 0, 'max_depth': 3, 'n_estimators': 300}
+GRID Hold-Out Test ROC AUC: 0.852
+GRID Aggregated Submission saved to 5fold_submission_grid.csv
+GRID Fold 1 Submission saved to grid_outer_folds\grid_1.csv
+GRID Fold 2 Submission saved to grid_outer_folds\grid_2.csv
+GRID Fold 3 Submission saved to grid_outer_folds\grid_3.csv
+GRID Fold 4 Submission saved to grid_outer_folds\grid_4.csv
+GRID Fold 5 Submission saved to grid_outer_folds\grid_5.csv
+
+==============================================
+Processing hypertuning technique: RANDOM
+==============================================
+
+--- Fold 1/5 ---
+  Best Params: {'subsample': 0.9, 'reg_lambda': 2.5, 'reg_alpha': 0.1, 'n_estimators': 225, 'max_depth': 4, 'learning_rate': 0.075, 'gamma': 0.1}
+  Model saved to random_outer_folds\random_1.pkl
+  Fold ROC AUC: 0.860
+
+--- Fold 2/5 ---
+  Best Params: {'subsample': 0.8, 'reg_lambda': 3.0, 'reg_alpha': 0.1, 'n_estimators': 225, 'max_depth': 3, 'learning_rate': 0.1, 'gamma': 0.1}
+  Model saved to random_outer_folds\random_2.pkl
+  Fold ROC AUC: 0.868
+
+--- Fold 3/5 ---
+  Best Params: {'subsample': 0.8, 'reg_lambda': 3.0, 'reg_alpha': 0, 'n_estimators': 225, 'max_depth': 5, 'learning_rate': 0.075, 'gamma': 0.75}
+  Model saved to random_outer_folds\random_3.pkl
+  Fold ROC AUC: 0.874
+
+--- Fold 4/5 ---
+  Best Params: {'subsample': 0.9, 'reg_lambda': 2.5, 'reg_alpha': 0.1, 'n_estimators': 175, 'max_depth': 3, 'learning_rate': 0.1, 'gamma': 0.1}
+  Model saved to random_outer_folds\random_4.pkl
+  Fold ROC AUC: 0.843
+
+--- Fold 5/5 ---
+  Best Params: {'subsample': 0.9, 'reg_lambda': 2.5, 'reg_alpha': 0.1, 'n_estimators': 225, 'max_depth': 4, 'learning_rate': 0.075, 'gamma': 0.1}
+  Model saved to random_outer_folds\random_5.pkl
+  Fold ROC AUC: 0.859
+
+=== Overall K-Fold Results ===
+Average ROC AUC: 0.861
+RANDOM K-Fold ROC AUC: 0.861
+RANDOM Selected Best Hyperparameters: {'subsample': 0.9, 'reg_lambda': 2.5, 'reg_alpha': 0.1, 'n_estimators': 225, 'max_depth': 4, 'learning_rate': 0.075, 'gamma': 0.1}
+RANDOM Hold-Out Test ROC AUC: 0.863
+RANDOM Aggregated Submission saved to 5fold_submission_random.csv
+RANDOM Fold 1 Submission saved to random_outer_folds\random_1.csv
+RANDOM Fold 2 Submission saved to random_outer_folds\random_2.csv
+RANDOM Fold 3 Submission saved to random_outer_folds\random_3.csv
+RANDOM Fold 4 Submission saved to random_outer_folds\random_4.csv
+RANDOM Fold 5 Submission saved to random_outer_folds\random_5.csv
+
+==============================================
+Processing hypertuning technique: BAYESIAN
+==============================================
+
+--- Fold 1/5 ---
+  Best Params: {'gamma': 0.014192398849522272, 'learning_rate': 0.1, 'max_depth': 3, 'n_estimators': 350, 'reg_alpha': 0.0, 'reg_lambda': 2.5, 'subsample': 1.0}
+  Model saved to bayesian_outer_folds\bayesian_1.pkl
+  Fold ROC AUC: 0.868
+
+--- Fold 2/5 ---
+  Best Params: {'gamma': 0.5, 'learning_rate': 0.059945776388423015, 'max_depth': 3, 'n_estimators': 500, 'reg_alpha': 0.0, 'reg_lambda': 2.5, 'subsample': 1.0}
+  Model saved to bayesian_outer_folds\bayesian_2.pkl
+  Fold ROC AUC: 0.868
+
+--- Fold 3/5 ---
+  Best Params: {'gamma': 0.4748202913777521, 'learning_rate': 0.1, 'max_depth': 3, 'n_estimators': 495, 'reg_alpha': 0.0, 'reg_lambda': 2.5, 'subsample': 1.0}
+  Model saved to bayesian_outer_folds\bayesian_3.pkl
+  Fold ROC AUC: 0.873
+
+--- Fold 4/5 ---
+  Best Params: {'gamma': 0.5, 'learning_rate': 0.03396391191559678, 'max_depth': 4, 'n_estimators': 500, 'reg_alpha': 0.0, 'reg_lambda': 2.5, 'subsample': 0.6}
+  Model saved to bayesian_outer_folds\bayesian_4.pkl
+  Fold ROC AUC: 0.840
+
+--- Fold 5/5 ---
+  Best Params: {'gamma': 0.5, 'learning_rate': 0.1, 'max_depth': 4, 'n_estimators': 350, 'reg_alpha': 0.0, 'reg_lambda': 1.0, 'subsample': 1.0}
+  Model saved to bayesian_outer_folds\bayesian_5.pkl
+  Fold ROC AUC: 0.859
+
+=== Overall K-Fold Results ===
+Average ROC AUC: 0.861
+BAYESIAN K-Fold ROC AUC: 0.861
+BAYESIAN Selected Best Hyperparameters: {'gamma': 0.014192398849522272, 'learning_rate': 0.1, 'max_depth': 3, 'n_estimators': 350, 'reg_alpha': 0.0, 'reg_lambda': 2.5, 'subsample': 1.0}
+BAYESIAN Hold-Out Test ROC AUC: 0.868
+BAYESIAN Aggregated Submission saved to 5fold_submission_bayesian.csv
+BAYESIAN Fold 1 Submission saved to bayesian_outer_folds\bayesian_1.csv
+BAYESIAN Fold 2 Submission saved to bayesian_outer_folds\bayesian_2.csv
+BAYESIAN Fold 3 Submission saved to bayesian_outer_folds\bayesian_3.csv
+BAYESIAN Fold 4 Submission saved to bayesian_outer_folds\bayesian_4.csv
+BAYESIAN Fold 5 Submission saved to bayesian_outer_folds\bayesian_5.csv
