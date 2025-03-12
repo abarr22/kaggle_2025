@@ -158,18 +158,30 @@ def main():
     # Define parameter sets for each hyper_tuning technique
     techniques = ["default", "grid", "random", "bayesian"]
     grid_example = {
-        'n_estimators': [100, 200],
-        'max_depth': [3, 5]
+        'n_estimators': [25, 50, 100, 200],  # 200 (100) chosen a lot
+        'max_depth': [1, 2, 3, 5],  # [1, 2, 3, 5] 2 and 3 chosen a lot
+        # 'gamma': [0, 0.1, 0.5],  # determines best regularization parameter
+        # 'reg_alpha': [0, 0.1, 1.0],  # determines best l1 parameter
+        # 'reg_lambda': [1, 1.5, 2.0],  # determines best l2 parameter
+        # 'subsample': [0.8, 1.0]  # optional
     }
     random_example = {
-        'n_estimators': [50, 100, 200],
-        'max_depth': [3, 5, 7],
-        'learning_rate': [0.01, 0.1, 0.2]
+        'n_estimators': [50, 100, 200, 300, 400], # 200 chosen a lot
+        'max_depth': [1, 2, 3, 5, 7],  # 5 (3) chosen a lot
+        'learning_rate': [0.01, 0.025, 0.05, 0.1, 0.2],  # 0.05 (0.1) chosen a lot
+        'gamma': [0, 0.1, 0.5],  # 0.1 chosen a lot
+        'reg_alpha': [0, 0.1, 1.0],  # 0 chosen a lot
+        'reg_lambda': [1, 1.5, 2.0],  # 2.0 chosen a lot
+        'subsample': [0.6, 0.8, 1.0]  # 0.8 chosen a lot
     }
     bayesian_example = {
-        'n_estimators': (50, 200),
-        'max_depth': (3, 7),
-        'learning_rate': (1e-3, 1e-1, 'log-uniform')
+        'n_estimators': (50, 400),  # 356, 400
+        'max_depth': (3, 7),  # 4, 3
+        'learning_rate': (1e-3, 1e-1, 'log-uniform'),  # 0.0355 (0.055, 0.1)
+        'gamma': (0, 0.5),  # 0.308 (0)
+        'reg_alpha': (0, 1.0),  # 0.5926 (0.67, 0)
+        'reg_lambda': (1, 2.0),  # 1.59, 2, 1.23
+        'subsample': (0.6, 1.0, 'uniform')  # 0.859 (1.0)
     }
     params_dict = {
         "default": None,
