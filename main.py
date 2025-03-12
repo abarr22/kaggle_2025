@@ -1,13 +1,16 @@
 import numpy as np
 import pandas as pd
 import os
+import math
 import warnings
+import joblib  # for saving models
 from sklearn.model_selection import KFold, GridSearchCV, RandomizedSearchCV, train_test_split
 from sklearn.metrics import roc_auc_score
 from xgboost import XGBClassifier
 from skopt import BayesSearchCV  # Make sure to install via: pip install scikit-optimize
 
 warnings.filterwarnings("ignore", category=UserWarning)  # quiet some XGBoost warnings
+
 
 # -------------------------------
 def kfold_train_and_evaluate_xgb(
@@ -17,17 +20,25 @@ def kfold_train_and_evaluate_xgb(
         hyper_tuning="default",
         param_grid=None,
         param_dist=None,
-        search_spaces=None
+        search_spaces=None,
+        save_dir=None
 ):
     """
     Performs K-fold cross-validation with XGBoost for classification, printing:
       - Fold-level best hyperparameters (if using a CV search)
       - Fold-level ROC AUC
       - Average ROC AUC across all folds
-    Returns the list of best parameters (one per fold, if available) and average ROC AUC.
+    Additionally, if save_dir is provided, saves the best model from each fold to that directory.
+
+    Returns:
+      best_params_per_fold : list
+          Best hyperparameters from each fold (or None if not applicable).
+      auc_avg : float
+          Average ROC AUC across folds.
+      fold_models : list
+          List of best models from each fold.
     """
 
-    # Helper to build the XGB model or CV object based on hyper_tuning
     def build_xgb_model():
         if hyper_tuning == "default":
             return XGBClassifier(random_state=42, eval_metric='logloss', objective='binary:logistic')
@@ -58,6 +69,7 @@ def kfold_train_and_evaluate_xgb(
     kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
     fold_aucs = []
     best_params_per_fold = []
+    fold_models = []
 
     for fold_idx, (train_idx, val_idx) in enumerate(kf.split(X)):
         print(f"\n--- Fold {fold_idx + 1}/{n_splits} ---")
@@ -68,14 +80,22 @@ def kfold_train_and_evaluate_xgb(
         model.fit(X_train_fold, y_train_fold)  # For CV objects, this performs internal CV
 
         if hasattr(model, 'best_estimator_'):
-            best_estimator = model.best_estimator_
+            best_model = model.best_estimator_
             print("  Best Params:", model.best_params_)
             best_params_per_fold.append(model.best_params_)
-            y_pred = best_estimator.predict_proba(X_val_fold)[:, 1]
         else:
-            y_pred = model.predict_proba(X_val_fold)[:, 1]
+            best_model = model
             best_params_per_fold.append(None)
 
+        fold_models.append(best_model)
+        # Save the model for this fold if a save directory is provided
+        if save_dir is not None:
+            os.makedirs(save_dir, exist_ok=True)
+            model_filename = os.path.join(save_dir, f"{hyper_tuning}_{fold_idx + 1}.pkl")
+            joblib.dump(best_model, model_filename)
+            print(f"  Model saved to {model_filename}")
+
+        y_pred = best_model.predict_proba(X_val_fold)[:, 1]
         auc = roc_auc_score(y_val_fold, y_pred)
         fold_aucs.append(auc)
         print(f"  Fold ROC AUC: {auc:.3f}")
@@ -84,14 +104,14 @@ def kfold_train_and_evaluate_xgb(
     print("\n=== Overall K-Fold Results ===")
     print(f"Average ROC AUC: {auc_avg:.3f}")
 
-    return best_params_per_fold, auc_avg
+    return best_params_per_fold, auc_avg, fold_models
 
 
 # -------------------------------
 def get_xgb_model(best_params=None):
     """
-    Returns an XGBClassifier with random_state, eval_metric, and objective set.
-    If best_params is provided (dict), they are passed to the model.
+    Returns an XGBClassifier with preset parameters.
+    If best_params (a dict) is provided, updates the model parameters accordingly.
     """
     params = {"random_state": 42, "eval_metric": "logloss", "objective": "binary:logistic"}
     if best_params:
@@ -163,22 +183,24 @@ def main():
         print("\n==============================================")
         print(f"Processing hypertuning technique: {tech.upper()}")
         print("==============================================")
+        # Set up directory for saving outer fold models
+        save_dir = f"{tech}_outer_folds"
         # Stage i) K-fold CV training
         if tech == "default":
-            bp_folds, kfold_auc = kfold_train_and_evaluate_xgb(
-                X_train_np, y_np, n_splits=5, hyper_tuning=tech
+            bp_folds, kfold_auc, fold_models = kfold_train_and_evaluate_xgb(
+                X_train_np, y_np, n_splits=5, hyper_tuning=tech, save_dir=save_dir
             )
         elif tech == "grid":
-            bp_folds, kfold_auc = kfold_train_and_evaluate_xgb(
-                X_train_np, y_np, n_splits=5, hyper_tuning=tech, param_grid=params_dict[tech]
+            bp_folds, kfold_auc, fold_models = kfold_train_and_evaluate_xgb(
+                X_train_np, y_np, n_splits=5, hyper_tuning=tech, param_grid=params_dict[tech], save_dir=save_dir
             )
         elif tech == "random":
-            bp_folds, kfold_auc = kfold_train_and_evaluate_xgb(
-                X_train_np, y_np, n_splits=5, hyper_tuning=tech, param_dist=params_dict[tech]
+            bp_folds, kfold_auc, fold_models = kfold_train_and_evaluate_xgb(
+                X_train_np, y_np, n_splits=5, hyper_tuning=tech, param_dist=params_dict[tech], save_dir=save_dir
             )
         elif tech == "bayesian":
-            bp_folds, kfold_auc = kfold_train_and_evaluate_xgb(
-                X_train_np, y_np, n_splits=5, hyper_tuning=tech, search_spaces=params_dict[tech]
+            bp_folds, kfold_auc, fold_models = kfold_train_and_evaluate_xgb(
+                X_train_np, y_np, n_splits=5, hyper_tuning=tech, search_spaces=params_dict[tech], save_dir=save_dir
             )
         print(f"{tech.upper()} K-Fold ROC AUC: {kfold_auc:.3f}")
 
@@ -199,7 +221,7 @@ def main():
         final_model.fit(X_train, y)  # train on full training data
         y_final_pred = final_model.predict_proba(X_final_test)[:, 1]
 
-        # Prepare submission file (assuming sample_submission_file has an Id and prediction column)
+        # Prepare aggregated submission file (from final model)
         if 'target' in df_sample_sub.columns:
             df_sample_sub['target'] = y_final_pred
         elif 'Y' in df_sample_sub.columns:
@@ -210,9 +232,25 @@ def main():
 
         submission_filename = f"5fold_submission_{tech}.csv"
         df_sample_sub.to_csv(submission_filename, index=False)
-        print(f"{tech.upper()} Submission saved to {submission_filename}")
-        print(f"{tech.upper()} K-Fold ROC AUC: {kfold_auc:.3f}")
-        print(f"{tech.upper()} Hold-Out Test ROC AUC: {hold_auc:.3f}\n")
+        print(f"{tech.upper()} Aggregated Submission saved to {submission_filename}")
+
+        # Stage iv) Generate individual submission CSVs from each fold's model
+        for i, model in enumerate(fold_models):
+            # Retrain the saved model on full training data
+            model.fit(X_train, y)
+            y_fold_pred = model.predict_proba(X_final_test)[:, 1]
+            # Reload sample submission for a fresh copy
+            df_sub = pd.read_csv(sample_submission_file)
+            if 'target' in df_sub.columns:
+                df_sub['target'] = y_fold_pred
+            elif 'Y' in df_sub.columns:
+                df_sub['Y'] = y_fold_pred
+            else:
+                pred_col = df_sub.columns[1]
+                df_sub[pred_col] = y_fold_pred
+            fold_submission_filename = os.path.join(save_dir, f"{tech}_{i + 1}.csv")
+            df_sub.to_csv(fold_submission_filename, index=False)
+            print(f"{tech.upper()} Fold {i + 1} Submission saved to {fold_submission_filename}")
 
 
 if __name__ == "__main__":
