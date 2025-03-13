@@ -6,6 +6,7 @@ import math
 import warnings
 import logging
 import joblib  # for saving models
+import xgboost
 from sklearn.model_selection import KFold, GridSearchCV, RandomizedSearchCV, train_test_split
 from sklearn.metrics import roc_auc_score
 from xgboost import XGBClassifier
@@ -135,7 +136,8 @@ def kfold_train_and_evaluate_xgb(
 
     def build_xgb_model():
         if hyper_tuning == "default":
-            return XGBClassifier(random_state=42, eval_metric='logloss', objective='binary:logistic')
+            # Increase n_estimators to allow early stopping
+            return XGBClassifier(random_state=42, eval_metric='logloss', objective='binary:logistic', n_estimators=1000)
         elif hyper_tuning == "grid":
             if not param_grid:
                 raise ValueError("param_grid must be provided for grid search.")
@@ -170,8 +172,14 @@ def kfold_train_and_evaluate_xgb(
         X_train_fold, X_val_fold = X[train_idx], X[val_idx]
         y_train_fold, y_val_fold = y[train_idx], y[val_idx]
 
-        model = build_xgb_model()
-        model.fit(X_train_fold, y_train_fold)  # For CV objects, this performs internal CV
+        if hyper_tuning == "default":
+            # Use early stopping with a validation set for the default model
+            model = build_xgb_model()
+            model.fit(X_train_fold, y_train_fold, eval_set=[(X_val_fold, y_val_fold)], verbose=False)
+
+        else:
+            model = build_xgb_model()
+            model.fit(X_train_fold, y_train_fold)
 
         if hasattr(model, 'best_estimator_'):
             best_model = model.best_estimator_
@@ -255,29 +263,42 @@ def main():
 
     # Define parameter sets for each hypertuning technique
     techniques = ["default", "grid", "random", "bayesian"]
+    # New parameter ranges for GridSearchCV:
     grid_example = {
-        'n_estimators': [300, 350, 400],
-        'max_depth': [2, 3],
-        'gamma': [0, 0.05, 0.1]
+        'n_estimators': [250, 300, 350, 400, 450],
+        'max_depth': [3, 4, 5],
+        # 'learning_rate': [0.01, 0.05, 0.1],
+        # 'gamma': [0, 0.01, 0.1, 0.2],
+        # 'subsample': [0.8, 0.9, 1.0],
+        # 'colsample_bytree': [0.8, 0.9, 1.0],
+        # 'reg_alpha': [0, 0.01, 0.1],
+        # 'reg_lambda': [1.0, 2.0, 3.0]
     }
+
+    # New parameter ranges for RandomizedSearchCV:
     random_example = {
-        'n_estimators': [200, 225, 250],
-        'max_depth': [3, 4],
-        'learning_rate': [0.075, 0.1],
-        'gamma': [0.05, 0.1],
-        'reg_alpha': [0, 0.05],
-        'reg_lambda': [2.0, 2.5, 3.0],
-        'subsample': [0.8, 0.9]
+        'n_estimators': [200, 250, 300, 350, 400],
+        'max_depth': [3, 4, 5, 6],
+        'learning_rate': [0.01, 0.05, 0.1, 0.2],
+        'gamma': [0, 0.01, 0.05, 0.1, 0.2],
+        'subsample': [0.7, 0.8, 0.9, 1.0],
+        'colsample_bytree': [0.7, 0.8, 0.9, 1.0],
+        'reg_alpha': [0, 0.01, 0.1, 0.5],
+        'reg_lambda': [1.0, 2.0, 3.0, 4.0]
     }
+
+    # New parameter ranges for BayesSearchCV:
     bayesian_example = {
-        'n_estimators': (300, 450),
-        'max_depth': (2, 4),
-        'learning_rate': (0.05, 0.1, 'log-uniform'),
-        'gamma': (0, 0.1),
-        'reg_alpha': (0, 0.1),
-        'reg_lambda': (2.0, 3.0),
-        'subsample': (0.8, 1.0, 'uniform')
+        'n_estimators': (200, 500),
+        'max_depth': (3, 6),
+        'learning_rate': (0.01, 0.2, 'log-uniform'),
+        'gamma': (0, 0.2),
+        'subsample': (0.7, 1.0, 'uniform'),
+        'colsample_bytree': (0.7, 1.0, 'uniform'),
+        'reg_alpha': (0, 0.5),
+        'reg_lambda': (1.0, 4.0)
     }
+
     params_dict = {
         "default": None,
         "grid": grid_example,
