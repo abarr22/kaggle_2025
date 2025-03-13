@@ -10,6 +10,7 @@ from sklearn.model_selection import KFold, GridSearchCV, RandomizedSearchCV, tra
 from sklearn.metrics import roc_auc_score
 from xgboost import XGBClassifier
 from skopt import BayesSearchCV  # Make sure to install via: pip install scikit-optimize
+from sklearn.feature_selection import SelectFromModel
 
 warnings.filterwarnings("ignore", category=UserWarning)  # quiet some XGBoost warnings
 
@@ -30,54 +31,80 @@ def preprocess_features(df_train, df_test):
     Preprocesses training and testing features by:
       - Replacing sentinel missing values (-3, -1) with np.nan.
       - Filling missing values (median for numeric, mode for categorical).
-      - Adding a simple interaction feature (if columns 'f2' and 'f3' exist).
+      - Capping outliers at the 1st and 99th percentiles.
+      - Adding interaction features from 'f2' and 'f3': difference and product.
       - Applying a log1p transform on highly skewed numeric features.
       - One-hot encoding the combined dataset.
     Returns:
       df_train_new, df_test_new: Preprocessed training and testing DataFrames.
     """
     # Replace sentinel missing values
-    df_train.replace({-3: np.nan, -1: np.nan}, inplace=True)
-    df_test.replace({-3: np.nan, -1: np.nan}, inplace=True)
+    df_train = df_train.replace({-3: np.nan, -1: np.nan})
+    df_test = df_test.replace({-3: np.nan, -1: np.nan})
 
-    # Fill missing values for numeric columns using median
+    # Fill missing values for numeric columns using median and for non-numeric using mode
     numeric_cols = df_train.select_dtypes(include=[np.number]).columns
     for col in numeric_cols:
         median_val = df_train[col].median()
-        df_train[col].fillna(median_val, inplace=True)
+        df_train.loc[:, col] = df_train[col].fillna(median_val)
         if col in df_test.columns:
-            df_test[col].fillna(df_test[col].median(), inplace=True)
+            df_test.loc[:, col] = df_test[col].fillna(df_test[col].median())
 
-    # Fill missing values for non-numeric columns using mode
     categorical_cols = df_train.select_dtypes(exclude=[np.number]).columns
     for col in categorical_cols:
         mode_val = df_train[col].mode()[0]
-        df_train[col].fillna(mode_val, inplace=True)
+        df_train.loc[:, col] = df_train[col].fillna(mode_val)
         if col in df_test.columns:
-            df_test[col].fillna(mode_val, inplace=True)
+            df_test.loc[:, col] = df_test[col].fillna(mode_val)
 
-    # Add an interaction feature if f2 and f3 exist
+    # Cap outliers in numeric columns at the 1st and 99th percentiles
+    for col in numeric_cols:
+        lower = df_train[col].quantile(0.01)
+        upper = df_train[col].quantile(0.99)
+        df_train.loc[:, col] = df_train[col].clip(lower, upper)
+        if col in df_test.columns:
+            lower_test = df_test[col].quantile(0.01)
+            upper_test = df_test[col].quantile(0.99)
+            df_test.loc[:, col] = df_test[col].clip(lower_test, upper_test)
+
+    # Add interaction features if f2 and f3 exist
     if 'f2' in df_train.columns and 'f3' in df_train.columns:
         df_train['f2_minus_f3'] = df_train['f2'] - df_train['f3']
+        df_train['f2_times_f3'] = df_train['f2'] * df_train['f3']
         df_test['f2_minus_f3'] = df_test['f2'] - df_test['f3']
+        df_test['f2_times_f3'] = df_test['f2'] * df_test['f3']
 
-    # Apply log transformation to numeric features that are heavily skewed
+    # Apply log1p transform on numeric features that are highly skewed
     for col in numeric_cols:
-        # Only apply if column is in both dataframes and all values are non-negative
-        if col in df_train.columns and df_train[col].min() >= 0:
+        if df_train[col].min() >= 0:
             median_val = df_train[col].median()
-            # Avoid division by zero; require median > 0 and a high max-to-median ratio
+            # If maximum is much larger than the median, assume heavy skew
             if median_val > 0 and (df_train[col].max() / median_val) > 10:
-                df_train[col] = np.log1p(df_train[col])
+                df_train.loc[:, col] = np.log1p(df_train[col])
                 if col in df_test.columns:
-                    df_test[col] = np.log1p(df_test[col])
+                    df_test.loc[:, col] = np.log1p(df_test[col])
 
-    # Combine and one-hot encode
+    # Combine train and test for one-hot encoding
     combined = pd.concat([df_train, df_test], axis=0)
     combined = pd.get_dummies(combined)
     df_train_new = combined.iloc[:len(df_train), :].reset_index(drop=True)
     df_test_new = combined.iloc[len(df_train):, :].reset_index(drop=True)
+
     return df_train_new, df_test_new
+
+
+# -------------------------------
+def select_features(X, y):
+    """
+    Performs model-based feature selection using SelectFromModel with an XGBClassifier.
+    Features with importance below the median importance are dropped.
+    Returns the transformed feature matrix and the selector object.
+    """
+    xgb_model = XGBClassifier(random_state=42, eval_metric='logloss', objective='binary:logistic')
+    xgb_model.fit(X, y)
+    selector = SelectFromModel(xgb_model, threshold="median", prefit=True)
+    X_selected = selector.transform(X)
+    return X_selected, selector
 
 
 # -------------------------------
@@ -97,7 +124,6 @@ def kfold_train_and_evaluate_xgb(
       - Fold-level ROC AUC
       - Average ROC AUC across all folds
     Additionally, if save_dir is provided, saves the best model from each fold to that directory.
-
     Returns:
       best_params_per_fold : list
           Best hyperparameters from each fold (or None if not applicable).
@@ -214,20 +240,25 @@ def main():
     y = df_train[target_col]
     X_train = df_train.drop(columns=[target_col])
 
-    # Preprocess features with enhancements: missing value replacement, interaction, and log transform.
+    # Preprocess features with enhancements
     X_train, df_test_processed = preprocess_features(X_train, df_test)
     X_final_test = df_test_processed.copy()
 
+    # Feature selection: remove low-importance features using SelectFromModel
+    X_train, selector = select_features(X_train, y)
+    # Transform test set with the same selector
+    X_final_test = selector.transform(X_final_test)
+
     # Convert to NumPy arrays for CV
-    X_train_np = X_train.values
+    X_train_np = X_train  # already a numpy array after selector.transform()
     y_np = y.values
 
-    # Define parameter sets for each hyper_tuning technique
+    # Define parameter sets for each hypertuning technique
     techniques = ["default", "grid", "random", "bayesian"]
     grid_example = {
-        'n_estimators': [300, 350, 400],  # Refining around 300-400
-        'max_depth': [2, 3],  # 2 and 3 performed best
-        'gamma': [0, 0.05, 0.1]  # Narrow gamma to low values
+        'n_estimators': [300, 350, 400],
+        'max_depth': [2, 3],
+        'gamma': [0, 0.05, 0.1]
     }
     random_example = {
         'n_estimators': [200, 225, 250],
@@ -239,13 +270,13 @@ def main():
         'subsample': [0.8, 0.9]
     }
     bayesian_example = {
-        'n_estimators': (300, 450),  # Focus on 300-450
-        'max_depth': (2, 4),  # 2-4 range
-        'learning_rate': (0.05, 0.1, 'log-uniform'),  # Between 0.05 and 0.1
-        'gamma': (0, 0.1),  # Focus on low gamma
-        'reg_alpha': (0, 0.1),  # Mostly near 0
-        'reg_lambda': (2.0, 3.0),  # Around 2.0 to 3.0
-        'subsample': (0.8, 1.0, 'uniform')  # 0.8 to 1.0
+        'n_estimators': (300, 450),
+        'max_depth': (2, 4),
+        'learning_rate': (0.05, 0.1, 'log-uniform'),
+        'gamma': (0, 0.1),
+        'reg_alpha': (0, 0.1),
+        'reg_lambda': (2.0, 3.0),
+        'subsample': (0.8, 1.0, 'uniform')
     }
     params_dict = {
         "default": None,
@@ -285,7 +316,7 @@ def main():
         logger.info(f"{tech.upper()} Selected Best Hyperparameters: {best_params}")
 
         # Stage ii) Hold-out test evaluation
-        X_tr, X_hold, y_tr, y_hold = train_test_split(X_train, y, test_size=0.2, random_state=42)
+        X_tr, X_hold, y_tr, y_hold = train_test_split(X_train_np, y_np, test_size=0.2, random_state=42)
         model_hold = get_xgb_model(best_params)
         model_hold.fit(X_tr, y_tr)
         y_hold_pred = model_hold.predict_proba(X_hold)[:, 1]
@@ -294,7 +325,7 @@ def main():
 
         # Stage iii) Final training on all training data and submission prediction
         final_model = get_xgb_model(best_params)
-        final_model.fit(X_train, y)  # train on full training data
+        final_model.fit(X_train_np, y_np)
         y_final_pred = final_model.predict_proba(X_final_test)[:, 1]
 
         # Prepare aggregated submission file (from final model)
@@ -312,10 +343,8 @@ def main():
 
         # Stage iv) Generate individual submission CSVs from each fold's model
         for i, model in enumerate(fold_models):
-            # Retrain the saved model on full training data
-            model.fit(X_train, y)
+            model.fit(X_train_np, y_np)
             y_fold_pred = model.predict_proba(X_final_test)[:, 1]
-            # Reload sample submission for a fresh copy
             df_sub = pd.read_csv(sample_submission_file)
             if 'target' in df_sub.columns:
                 df_sub['target'] = y_fold_pred
