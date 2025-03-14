@@ -60,6 +60,8 @@ def preprocess_features(df_train, df_test):
 
     # Cap outliers in numeric columns at the 1st and 99th percentiles
     for col in numeric_cols:
+        df_train[col] = df_train[col].astype(float)
+        df_test[col] = df_test[col].astype(float)
         lower = df_train[col].quantile(0.01)
         upper = df_train[col].quantile(0.99)
         df_train.loc[:, col] = df_train[col].clip(lower, upper)
@@ -162,12 +164,13 @@ def kfold_train_and_evaluate_xgb(
             logger.info(f"[XGB] Unrecognized hyper_tuning='{hyper_tuning}'. Using default model.")
             return XGBClassifier(random_state=42, eval_metric='logloss', objective='binary:logistic')
 
-    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+    from sklearn.model_selection import StratifiedKFold
+    kf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
     fold_aucs = []
     best_params_per_fold = []
     fold_models = []
 
-    for fold_idx, (train_idx, val_idx) in enumerate(kf.split(X)):
+    for fold_idx, (train_idx, val_idx) in enumerate(kf.split(X, y)):
         logger.info(f"\n--- Fold {fold_idx + 1}/{n_splits} ---")
         X_train_fold, X_val_fold = X[train_idx], X[val_idx]
         y_train_fold, y_val_fold = y[train_idx], y[val_idx]
