@@ -262,11 +262,11 @@ def main():
     y_np = y.values
 
     # Define parameter sets for each hypertuning technique
-    techniques = ["default", "grid", "random", "bayesian"]
+    techniques = ["default", "random", "bayesian"]
     # New parameter ranges for GridSearchCV:
     grid_example = {
-        'n_estimators': [250, 300, 350, 400, 450],
-        'max_depth': [3, 4, 5],
+        'n_estimators': [450, 500, 550],
+        'max_depth': [4, 5, 6],
         # 'learning_rate': [0.01, 0.05, 0.1],
         # 'gamma': [0, 0.01, 0.1, 0.2],
         # 'subsample': [0.8, 0.9, 1.0],
@@ -277,26 +277,26 @@ def main():
 
     # New parameter ranges for RandomizedSearchCV:
     random_example = {
-        'n_estimators': [200, 250, 300, 350, 400],
-        'max_depth': [3, 4, 5, 6],
-        'learning_rate': [0.01, 0.05, 0.1, 0.2],
-        'gamma': [0, 0.01, 0.05, 0.1, 0.2],
-        'subsample': [0.7, 0.8, 0.9, 1.0],
-        'colsample_bytree': [0.7, 0.8, 0.9, 1.0],
-        'reg_alpha': [0, 0.01, 0.1, 0.5],
-        'reg_lambda': [1.0, 2.0, 3.0, 4.0]
+        'n_estimators': [400, 450, 500, 550, 600],
+        'max_depth': [4, 5, 6],
+        'learning_rate': [0.01, 0.02, 0.05, 0.1],
+        'gamma': [0.05, 0.075, 0.1, 0.125, 0.15],
+        'subsample': [0.85, 0.9, 0.95, 1.0],
+        'colsample_bytree': [0.9, 0.95, 1.0],
+        'reg_alpha': [0.2, 0.3, 0.4, 0.5],
+        'reg_lambda': [2.0, 2.5, 3.0, 3.5]
     }
 
     # New parameter ranges for BayesSearchCV:
     bayesian_example = {
-        'n_estimators': (200, 500),
-        'max_depth': (3, 6),
-        'learning_rate': (0.01, 0.2, 'log-uniform'),
-        'gamma': (0, 0.2),
-        'subsample': (0.7, 1.0, 'uniform'),
-        'colsample_bytree': (0.7, 1.0, 'uniform'),
-        'reg_alpha': (0, 0.5),
-        'reg_lambda': (1.0, 4.0)
+        'n_estimators': (400, 600),
+        'max_depth': (4, 6),
+        'learning_rate': (0.01, 0.1, 'log-uniform'),
+        'gamma': (0.05, 0.15),
+        'subsample': (0.85, 1.0, 'uniform'),
+        'colsample_bytree': (0.9, 1.0, 'uniform'),
+        'reg_alpha': (0.2, 0.5),
+        'reg_lambda': (2.0, 3.0)
     }
 
     params_dict = {
