@@ -134,6 +134,8 @@ def kfold_train_and_evaluate_xgb(
           Average ROC AUC across folds.
       fold_models : list
           List of best models from each fold.
+      fold_aucs : list
+          List of ROC AUC values for each fold.
     """
 
     def build_xgb_model():
@@ -179,7 +181,6 @@ def kfold_train_and_evaluate_xgb(
             # Use early stopping with a validation set for the default model
             model = build_xgb_model()
             model.fit(X_train_fold, y_train_fold, eval_set=[(X_val_fold, y_val_fold)], verbose=False)
-
         else:
             model = build_xgb_model()
             model.fit(X_train_fold, y_train_fold)
@@ -212,7 +213,7 @@ def kfold_train_and_evaluate_xgb(
     logger.info("\n=== Overall K-Fold Results ===")
     logger.info(f"Average ROC AUC: {auc_avg:.3f}")
 
-    return best_params_per_fold, auc_avg, fold_models
+    return best_params_per_fold, auc_avg, fold_models, fold_aucs
 
 
 # -------------------------------
@@ -266,19 +267,8 @@ def main():
 
     # Define parameter sets for each hypertuning technique
     techniques = ["default", "random", "bayesian"]
-    # New parameter ranges for GridSearchCV:
-    grid_example = {
-        'n_estimators': [450, 500, 550],
-        'max_depth': [4, 5, 6],
-        # 'learning_rate': [0.01, 0.05, 0.1],
-        # 'gamma': [0, 0.01, 0.1, 0.2],
-        # 'subsample': [0.8, 0.9, 1.0],
-        # 'colsample_bytree': [0.8, 0.9, 1.0],
-        # 'reg_alpha': [0, 0.01, 0.1],
-        # 'reg_lambda': [1.0, 2.0, 3.0]
-    }
 
-    # New parameter ranges for RandomizedSearchCV:
+    # Parameter ranges for RandomizedSearchCV:
     random_example = {
         'n_estimators': [400, 450, 500, 550, 600],
         'max_depth': [4, 5, 6],
@@ -290,7 +280,7 @@ def main():
         'reg_lambda': [2.0, 2.5, 3.0, 3.5]
     }
 
-    # New parameter ranges for BayesSearchCV:
+    # Parameter ranges for BayesSearchCV:
     bayesian_example = {
         'n_estimators': (400, 600),
         'max_depth': (4, 6),
@@ -304,7 +294,6 @@ def main():
 
     params_dict = {
         "default": None,
-        "grid": grid_example,
         "random": random_example,
         "bayesian": bayesian_example
     }
@@ -318,19 +307,15 @@ def main():
         save_dir = f"{tech}_outer_folds"
         # Stage i) K-fold CV training
         if tech == "default":
-            bp_folds, kfold_auc, fold_models = kfold_train_and_evaluate_xgb(
+            bp_folds, kfold_auc, fold_models, fold_aucs = kfold_train_and_evaluate_xgb(
                 X_train_np, y_np, n_splits=5, hyper_tuning=tech, save_dir=save_dir
             )
-        elif tech == "grid":
-            bp_folds, kfold_auc, fold_models = kfold_train_and_evaluate_xgb(
-                X_train_np, y_np, n_splits=5, hyper_tuning=tech, param_grid=params_dict[tech], save_dir=save_dir
-            )
         elif tech == "random":
-            bp_folds, kfold_auc, fold_models = kfold_train_and_evaluate_xgb(
+            bp_folds, kfold_auc, fold_models, fold_aucs = kfold_train_and_evaluate_xgb(
                 X_train_np, y_np, n_splits=5, hyper_tuning=tech, param_dist=params_dict[tech], save_dir=save_dir
             )
         elif tech == "bayesian":
-            bp_folds, kfold_auc, fold_models = kfold_train_and_evaluate_xgb(
+            bp_folds, kfold_auc, fold_models, fold_aucs = kfold_train_and_evaluate_xgb(
                 X_train_np, y_np, n_splits=5, hyper_tuning=tech, search_spaces=params_dict[tech], save_dir=save_dir
             )
         logger.info(f"{tech.upper()} K-Fold ROC AUC: {kfold_auc:.3f}")
@@ -347,12 +332,18 @@ def main():
         hold_auc = roc_auc_score(y_hold, y_hold_pred)
         logger.info(f"{tech.upper()} Hold-Out Test ROC AUC: {hold_auc:.3f}")
 
-        # Stage iii) Final training on all training data and submission prediction
-        final_model = get_xgb_model(best_params)
-        final_model.fit(X_train_np, y_np)
-        y_final_pred = final_model.predict_proba(X_final_test)[:, 1]
+        # Stage iii) Final training on all training data using weighted ensemble of fold models
+        meta_X_hold = np.column_stack([model.predict_proba(X_hold)[:, 1] for model in fold_models])
+        from sklearn.linear_model import LogisticRegression
+        meta_learner = LogisticRegression(solver='liblinear', random_state=42)
+        meta_learner.fit(meta_X_hold, y_hold)
 
-        # Prepare aggregated submission file (from final model)
+        meta_X_final = np.column_stack([model.predict_proba(X_final_test)[:, 1] for model in fold_models])
+        y_final_pred_meta = meta_learner.predict_proba(meta_X_final)[:, 1]
+
+        y_final_pred = y_final_pred_meta  # final prediction using weighted ensemble
+
+        # Prepare aggregated submission file (from weighted ensemble)
         if 'target' in df_sample_sub.columns:
             df_sample_sub['target'] = y_final_pred
         elif 'Y' in df_sample_sub.columns:
